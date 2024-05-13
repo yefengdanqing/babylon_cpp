@@ -6,6 +6,8 @@ include(CTest)                      # for BUILD_TESTING option
 include(CMakePackageConfigHelpers)  # for write_basic_package_version_file
 
 option(BUILD_DEPS "Use FetchContent download and build dependencies" OFF)
+string(REPLACE "|" ";" OUTPUT_PATH "${CMAKE_PREFIX_PATH}")
+set(CMAKE_PREFIX_PATH "${OUTPUT_PATH}" CACHE FILEPATH "" FORCE)
 
 if(BUILD_DEPS)
   include(FetchContent)
