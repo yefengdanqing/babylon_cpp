@@ -2,46 +2,7 @@ package(
   default_visibility = ['//visibility:public'],
 )
 
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-
-################################################################################
-# Protocol Buffer启用ArenaString的开关 --//:arenastring 
-bool_flag(
-  name = 'arenastring',
-  build_setting_default = False,
-)
-
-config_setting(
-  name = 'patch-protobuf',
-  flag_values = {
-    ':arenastring': 'True'
-  },
-)
-
-alias(
-  name = 'protoc',
-  actual = select({
-    ':patch-protobuf': '@com_google_protobuf_patch//:protoc',
-    '//conditions:default': '@com_google_protobuf//:protoc',
-  }),
-)
-
-alias(
-  name = 'protobuf',
-  actual = select({
-    ':patch-protobuf': '@com_google_protobuf_patch//:protobuf',
-    '//conditions:default': '@com_google_protobuf//:protobuf',
-  }),
-)
-
-alias(
-  name = 'cc_toolchain',
-  actual = select({
-    ':patch-protobuf': '@com_google_protobuf_patch//:cc_toolchain',
-    '//conditions:default': '@com_google_protobuf//:cc_toolchain',
-  }),
-)
-################################################################################
+load('@bazel_skylib//rules:common_settings.bzl', 'bool_flag')
 
 ################################################################################
 bool_flag(
@@ -92,6 +53,11 @@ alias(
 alias(
   name = 'anyflow',
   actual = '//src/babylon/anyflow',
+)
+
+alias(
+  name = 'application_context',
+  actual = '//src/babylon:application_context',
 )
 
 alias(
@@ -165,13 +131,33 @@ alias(
 )
 
 alias(
+  name = 'logging_async_log_stream',
+  actual = '//src/babylon/logging:async_log_stream',
+)
+
+alias(
   name = 'logging_interface',
-  actual = '//src/babylon/logging:interface',
+  actual = '//src/babylon/logging:logger',
+)
+
+alias(
+  name = 'logging_log_entry',
+  actual = '//src/babylon/logging:log_entry',
 )
 
 alias(
   name = 'logging_log_stream',
   actual = '//src/babylon/logging:log_stream',
+)
+
+alias(
+  name = 'logging_logger',
+  actual = '//src/babylon/logging:logger',
+)
+
+alias(
+  name = 'logging_rolling_file_object',
+  actual = '//src/babylon/logging:rolling_file_object',
 )
 
 alias(
@@ -247,5 +233,20 @@ alias(
 alias(
   name = 'type_traits',
   actual = '//src/babylon:type_traits',
+)
+################################################################################
+
+################################################################################
+# bzlmod and workspace use different boost bazel support repo
+load('bazel/module_name.bzl', 'module_name')
+
+alias(
+  name = 'boost.preprocessor',
+  actual = '@boost.preprocessor' if module_name() else '@boost//:preprocessor',
+)
+
+alias(
+  name = 'boost.spirit',
+  actual = '@boost.spirit' if module_name() else '@boost//:spirit',
 )
 ################################################################################

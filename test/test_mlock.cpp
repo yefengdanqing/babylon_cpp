@@ -64,6 +64,7 @@ TEST_F(MemoryLockerTest, lock_regions_before_start) {
   ASSERT_FALSE(region_in_memory());
   ASSERT_EQ(0, MemoryLocker::instance().start());
   next_round();
+  ::usleep(1000 * 1000);
   ASSERT_TRUE(region_in_memory());
   ASSERT_EQ(CEILED_REGION_SIZE, MemoryLocker::instance().locked_bytes());
   ASSERT_EQ(0, MemoryLocker::instance().last_errno());
@@ -83,7 +84,6 @@ TEST_F(MemoryLockerTest, lock_regions_after_start) {
   ASSERT_EQ(0, MemoryLocker::instance().stop());
 }
 
-#ifndef DISABLE_MUNLOCK_TEST
 TEST_F(MemoryLockerTest, unlock_regions_after_stop) {
   ASSERT_EQ(0, MemoryLocker::instance().start());
   next_round();
@@ -96,7 +96,6 @@ TEST_F(MemoryLockerTest, unlock_regions_after_stop) {
   ::posix_fadvise(fd, 0, REGION_SIZE, POSIX_FADV_DONTNEED);
   ASSERT_FALSE(region_in_memory());
 }
-#endif // DISABLE_MUNLOCK_TEST
 
 TEST_F(MemoryLockerTest, start_twice_fail_but_harmless) {
   ASSERT_FALSE(region_in_memory());

@@ -55,6 +55,7 @@ inline PROTOBUF_ALWAYS_INLINE AllocationPolicyWithMemoryResourcePointer::SwissMe
 swiss_resource(const AllocationPolicy* policy) noexcept {
   return *static_cast<const AllocationPolicyWithMemoryResourcePointer*>(policy)->resource;
 }
+
 #if defined(__GNUC__) && __GNUC__ >= 5
 // kSentryArenaBlock is used for arenas which can be referenced pre-main. So,
 // constexpr is required.

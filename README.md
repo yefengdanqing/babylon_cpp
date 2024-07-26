@@ -26,33 +26,46 @@ Babylon是一个用于支持C++高性能服务端开发的基础库，从内存�
 
 ## 编译并使用
 
-Babylon使用[Bazel](https://bazel.build)进行构建和依赖管理
-- 构建`bazel build ...`
-- 单测`bazel test ...`
-- Asan单测`bazel test --config asan ...`
-- Tsan单测`bazel test --config tsan ...`
-- All in One依赖目标`:babylon`
-- 分子模块依赖目标`:any`，`:concurrent`等，详见[BUILD](BUILD)文件
+### 支持平台和编译器
 
-Babylon也支持[CMake](https://cmake.org)进行构建，以及通过[FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html)进行自动依赖下载
-- 环境准备
-  - 使用预编译依赖`cmake -Bbuild`
-  - 使用自动依赖下载`cmake -Bbuild -DBUILD_DEPS=ON`
-- 编译`cmake --build build`
-- 单测`ctest --test-dir build`
+- OS: Linux
+- CPU: x86-64/aarch64
+- COMPILER: gcc/clang
 
-## 功能文档
+### Bazel
 
-- [any](docs/any.md)
-- [anyflow](docs/anyflow/index.md)
-- [arenastring](docs/arenastring.md)
-- [concurrent](docs/concurrent/index.md)
-- [executor](docs/executor.md)
-- [future](docs/future.md)
-- [logging](docs/logging.md)
-- [reusable](docs/reusable/index.md)
-- [serialization](docs/serialization.md)
-- [time](docs/time.md)
+Babylon使用[Bazel](https://bazel.build)进行构建并使用[bzlmod](https://bazel.build/external/module)进行依赖管理，考虑到目前Bazel生态整体处于bzlmod的转换周期，Babylon也依然兼容[workspace](https://bazel.build/rules/lib/globals/workspace)依赖管理模式
+
+- [Depend with bazel use bzlmod](example/depend-use-bzlmod)
+- [Depend with bazel use workspace](example/depend-use-workspace)
+
+### CMake
+
+Babylon也支持使用[CMake](https://cmake.org)进行构建，并支持通过[find_package](https://cmake.org/cmake/help/latest/command/find_package.html)、[add_subdirectory](https://cmake.org/cmake/help/latest/command/add_subdirectory.html)或[FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html)进行依赖引入
+
+- [Depend with cmake use FetchContent](example/depend-use-cmake-fetch)
+- [Depend with cmake use find_package](example/depend-use-cmake-find)
+- [Depend with cmake use add_subdirectory](example/depend-use-cmake-subdir)
+
+## 模块功能文档
+
+- [:any](docs/any.md)
+- [:anyflow](docs/anyflow/index.md)
+- [:application_context](docs/application_context.md)
+- [:concurrent](docs/concurrent/index.md)
+- [:executor](docs/executor.md)
+- [:future](docs/future.md)
+- [:logging](docs/logging/index.md)
+  - [Use async logger](example/use-async-logger)
+  - [Use with glog](example/use-with-glog)
+- [:reusable](docs/reusable/index.md)
+- [:serialization](docs/serialization.md)
+- [:time](docs/time.md)
+- Protobuf [arenastring](docs/arenastring.md) patch
+- Typical usage with [brpc](https://github.com/apache/brpc)
+  - use [:future](docs/future.md) with bthread: [example/use-with-bthread](example/use-with-bthread)
+  - use [:reusable_memory_resource](docs/reusable/memory_resource.md) for rpc server: [example/use-arena-with-brpc](example/use-arena-with-brpc)
+  - use [:concurrent_counter](docs/concurrent/counter.md) implement bvar: [example/use-counter-with-bvar](example/use-counter-with-bvar)
 
 ## 整体设计思路
 

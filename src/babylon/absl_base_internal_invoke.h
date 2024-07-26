@@ -5,30 +5,67 @@
 // clang-format off
 #include BABYLON_EXTERNAL(absl/base/config.h)
 #include BABYLON_EXTERNAL(absl/base/internal/invoke.h)
+// clang-format on
+
+// add some essential features for old LTS abseil-cpp
+#ifdef ABSL_LTS_RELEASE_VERSION
+
+#if ABSL_LTS_RELEASE_VERSION < 20220623L
+#define BABYLON_TMP_NEED_INVOKE_RESULT_R 1
+#endif // ABSL_LTS_RELEASE_VERSION < 20220623L
+
+#if ABSL_LTS_RELEASE_VERSION < 20200923L
+#define BABYLON_TMP_NEED_INVOKE_RESULT_T 1
+#endif // ABSL_LTS_RELEASE_VERSION < 20200923L
+
+#else // !ABSL_LTS_RELEASE_VERSION
+
+// TODO(lijiang01): some inactive repo depend on old abseil-cpp head
+//                  use macro check trick to adapt them before they switch to
+//                  some LTS
+
+// clang-format off
+#include BABYLON_EXTERNAL(absl/base/optimization.h)
+// clang-format on
+
+#ifndef ABSL_ASSUME
+#define BABYLON_TMP_NEED_INVOKE_RESULT_R 1
+#endif // ABSL_ASSUME
+
+#ifndef ABSL_HAVE_FEATURE
+#define BABYLON_TMP_NEED_INVOKE_RESULT_T 1
+#endif // ABSL_HAVE_FEATURE
+
+#endif // !ABSL_LTS_RELEASE_VERSION
+
+#if BABYLON_TMP_NEED_INVOKE_RESULT_R || BABYLON_TMP_NEED_INVOKE_RESULT_T
+// clang-format off
 #include BABYLON_EXTERNAL(absl/meta/type_traits.h)
 // clang-format on
 
-#include <functional>
-
-// 2023年之前没有定义absl::is_invocable_r，需要补充一下
-#if ABSL_LTS_RELEASE_VERSION < 20220623L
-
+// very old abseil-cpp dont have these macros
 #ifndef ABSL_NAMESPACE_BEGIN
 #define ABSL_NAMESPACE_BEGIN
 #define ABSL_NAMESPACE_END
 #endif // ABSL_NAMESPACE_BEGIN
+#endif // BABYLON_TMP_NEED_INVOKE_RESULT_R || BABYLON_TMP_NEED_INVOKE_RESULT_T
 
+#if BABYLON_TMP_NEED_INVOKE_RESULT_T
+namespace absl {
+ABSL_NAMESPACE_BEGIN
+namespace base_internal {
+template <typename F, typename... Args>
+using invoke_result_t = InvokeT<F, Args...>;
+} // namespace base_internal
+ABSL_NAMESPACE_END
+} // namespace absl
+#endif // BABYLON_TMP_NEED_INVOKE_RESULT_T
+
+#if BABYLON_TMP_NEED_INVOKE_RESULT_R
 namespace absl {
 ABSL_NAMESPACE_BEGIN
 namespace base_internal {
 
-// 2021年之前没有定义invoke_result_t标准名
-#if !BABYLON_HAS_INCLUDE("absl/flags/commandlineflag.h")
-template <typename F, typename... Args>
-using invoke_result_t = InvokeT<F, Args...>;
-#endif // !BABYLON_HAS_INCLUDE("absl/numeric/bits.h")
-
-////////////////////////////////////////////////////////////////////////////////
 template <typename AlwaysVoid, typename, typename, typename...>
 struct IsInvocableRImpl : std::false_type {};
 
@@ -47,10 +84,11 @@ struct IsInvocableRImpl<
 // C++11-compatible version of `std::is_invocable_r`.
 template <typename R, typename F, typename... Args>
 using is_invocable_r = IsInvocableRImpl<void, R, F, Args...>;
-////////////////////////////////////////////////////////////////////////////////
 
 } // namespace base_internal
 ABSL_NAMESPACE_END
 } // namespace absl
+#endif // BABYLON_TMP_NEED_INVOKE_RESULT_R
 
-#endif // ABSL_LTS_RELEASE_VERSION < 20220623L
+#undef BABYLON_TMP_NEED_INVOKE_RESULT_R
+#undef BABYLON_TMP_NEED_INVOKE_RESULT_T

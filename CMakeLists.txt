@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(babylon VERSION 1.1.4)
+project(babylon VERSION 1.3.0)
 
 include(CTest)                      # for BUILD_TESTING option
 include(CMakePackageConfigHelpers)  # for write_basic_package_version_file
@@ -13,13 +13,13 @@ if(BUILD_DEPS)
   include(FetchContent)
   FetchContent_Declare(
     absl
-    URL "https://github.com/abseil/abseil-cpp/archive/refs/tags/20230802.1.tar.gz"
-    URL_HASH SHA256=987ce98f02eefbaf930d6e38ab16aa05737234d7afbab2d5c4ea7adbe50c28ed
+    URL "https://github.com/abseil/abseil-cpp/archive/refs/tags/20230125.1.tar.gz"
+    URL_HASH SHA256=81311c17599b3712069ded20cca09a62ab0bf2a89dfa16993786c8782b7ed145
   )
   FetchContent_Declare(
     protobuf
-    URL "https://github.com/protocolbuffers/protobuf/archive/refs/tags/v25.3.tar.gz"
-    URL_HASH SHA256=d19643d265b978383352b3143f04c0641eea75a75235c111cc01a1350173180e
+    URL "https://github.com/protocolbuffers/protobuf/archive/refs/tags/v22.5.tar.gz"
+    URL_HASH SHA256=4b98c800b352e7582bc92ed398999030ce4ebb49c7858dcb070850ec476b72f2
   )
   FetchContent_Declare(
     boost
@@ -68,7 +68,7 @@ set_source_files_properties(
   "${CMAKE_CURRENT_SOURCE_DIR}/src/babylon/reusable/patch/arena.cpp"
   PROPERTIES COMPILE_FLAGS "-fno-access-control")
 
-if(NOT BUILD_DEPS)
+if(NOT BUILD_DEPS AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   install(TARGETS babylon EXPORT babylon)
   install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/babylon"
     DESTINATION include
@@ -101,6 +101,10 @@ if(BUILD_TESTING AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     IMPORT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/proto"
     PROTOC_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
   target_include_directories(babylon_test_proto PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+  set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/logging/test_logger.cpp"
+    PROPERTIES COMPILE_FLAGS "-fno-access-control")
+
   foreach(SRC ${BABYLON_TEST_SRCS})
     string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "" TARGET_NAME ${SRC})
     string(REPLACE "/" "_" TARGET_NAME ${TARGET_NAME})
