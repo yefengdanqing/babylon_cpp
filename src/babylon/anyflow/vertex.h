@@ -261,6 +261,8 @@ BABYLON_NAMESPACE_END
 #define __ANYFLOW_MEMBER(r, data, args)                        \
   BOOST_PP_IF(BOOST_PP_EQUAL(BOOST_PP_TUPLE_ELEM(0, args), 0), \
               __ANYFLOW_DEPEND args, __ANYFLOW_EMIT args)
+// ANYFLOW_DEPEND_DATA(::std::string, e, 1)-->(0, ::std::string, e, 0, 0, 1, 0)
+// ANYFLOW_DEPEND_DATA(::std::string, e)   -->(0, ::std::string, e, 0, 0, 0, 0, 2, 0)
 
 #define __ANYFLOW_DEPEND(r, type, name, is_channel, is_mutable,               \
                          essential_level, is_va_args, ...)                    \
