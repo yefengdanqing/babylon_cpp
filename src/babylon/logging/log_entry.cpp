@@ -1,5 +1,7 @@
 #include "babylon/logging/log_entry.h"
 
+#include "babylon/protect.h"
+
 BABYLON_NAMESPACE_BEGIN
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -78,7 +80,7 @@ int LogStreamBuffer::overflow(int ch) noexcept {
 int LogStreamBuffer::sync() noexcept {
   auto ptr = pptr();
   if (ptr > _sync_point) {
-    _log.size += ptr - _sync_point;
+    _log.size += static_cast<uintptr_t>(ptr - _sync_point);
     _sync_point = ptr;
   }
   return 0;
@@ -114,3 +116,5 @@ void LogStreamBuffer::overflow_page_table() noexcept {
 ////////////////////////////////////////////////////////////////////////////////
 
 BABYLON_NAMESPACE_END
+
+#include "babylon/unprotect.h"

@@ -73,9 +73,9 @@ class ApplicationContext {
   static ApplicationContext& instance() noexcept;
 
   // 注册一个组件，可以额外附加一个名称用于区分同类型的组件
-  int register_component(::std::unique_ptr<ComponentHolder>&& holder) noexcept;
-  int register_component(::std::unique_ptr<ComponentHolder>&& holder,
-                         StringView name) noexcept;
+  void register_component(::std::unique_ptr<ComponentHolder>&& holder) noexcept;
+  void register_component(::std::unique_ptr<ComponentHolder>&& holder,
+                          StringView name) noexcept;
 
   // 取得一个明确类型的组件访问器
   // 在需要反复使用工厂构造组件的情况下可以节省冗余寻址成本
@@ -135,8 +135,8 @@ class ApplicationContext::OffsetDeleter {
   void operator()(void* ptr) noexcept;
 
  private:
-  void (*deleter)(void*) {nullptr};
-  ptrdiff_t offset {0};
+  void (*_deleter)(void*) {nullptr};
+  ptrdiff_t _offset {0};
 };
 
 class ApplicationContext::ComponentHolder {
@@ -153,20 +153,35 @@ class ApplicationContext::ComponentHolder {
   template <typename T>
   void set_option(T&& option) noexcept;
 
+  // ComponentHoler all support use as factory, but not all usable as singleton.
   inline bool support_singleton() const noexcept;
 
+  // If component is convertible to type T, return address offset in convertion.
+  // Return PTRDIFF_MAX if not convertible.
   template <typename T>
   inline ptrdiff_t offset() const noexcept;
 
+  // Type-erased component as factory interface.
   Any create(ApplicationContext& context) noexcept;
   Any create(ApplicationContext& context, const Any& option) noexcept;
 
+  // Type-erased component as singleton interface. Create and hold a singleton
+  // component inside when first get request comes.
+  // Return that singleton in a type-erased way, or empty any when creation
+  // failed or not support_singleton.
   inline Any& get(ApplicationContext& context) noexcept;
 
   void for_each_type(
       const ::std::function<void(const Id*)>& callback) const noexcept;
 
   inline size_t sequence() const noexcept;
+
+  // How many paths exist to access this component by type or name.
+  // Use to detect orphan component cause by type and name conflict.
+  inline size_t accessible_path_number() const noexcept;
+
+  inline const ::std::string& name() const noexcept;
+  inline const Id* type_id() const noexcept;
 
  protected:
   // 构造时需要给定必要的类型信息
@@ -193,6 +208,16 @@ class ApplicationContext::ComponentHolder {
   int initialize(Any& instance, ApplicationContext& context,
                  const Any& option) noexcept;
 
+  // 设置实例类型信息，用于支持构造函数的实现
+  template <typename T>
+  void set_type() noexcept;
+  template <typename T>
+  void add_convertible_type() noexcept;
+  template <typename T, typename B, typename... BS>
+  void add_convertible_type() noexcept;
+  template <typename T>
+  void remove_convertible_type() noexcept;
+
   // 使用空参create_instance构造实例，之后探测协议函数并调用
   // 一般情况下实现空参版本即可，特殊情况下例如想要更换或禁用探测协议函数，可以重写此入口
   virtual Any create_instance(ApplicationContext& context,
@@ -215,16 +240,7 @@ class ApplicationContext::ComponentHolder {
   // 取得下一个自增序号，用来标识初始化顺序实现逆序销毁
   static size_t next_sequence() noexcept;
 
-  // 查询转换到指定类型所需的偏移量，无法转换时返回最大值PTRDIFF_MAX
   ptrdiff_t convert_offset(const Id* type) const noexcept;
-
-  // 设置实例类型信息，用于支持构造函数的实现
-  template <typename T>
-  void set_type() noexcept;
-  template <typename T>
-  void add_convertible_type() noexcept;
-  template <typename T, typename B, typename... BS>
-  void add_convertible_type() noexcept;
 
   void create_singleton(ApplicationContext& context) noexcept;
 
@@ -287,6 +303,12 @@ class ApplicationContext::ComponentHolder {
                 int>::type = 0>
   static int initialize(Any&, ApplicationContext&, const Any&) noexcept;
 
+  inline void increase_accessible_path() noexcept;
+  inline void decrease_accessible_path() noexcept;
+
+  inline void set_name(StringView name) noexcept;
+
+  ::std::string _name;
   const Any::Descriptor* _type_id {Any::descriptor<void>()};
   ::absl::flat_hash_map<const Id*, ptrdiff_t> _convert_offset;
   int (*_autowire_function)(Any&, ApplicationContext&) {nullptr};
@@ -297,6 +319,9 @@ class ApplicationContext::ComponentHolder {
   SingletonState _singleton_state {SingletonState::UNINITIALIZED};
   Any _singleton;
   size_t _sequence {0};
+  size_t _accessible_path {0};
+
+  friend ApplicationContext;
 };
 
 template <typename T, typename... BS>
@@ -421,7 +446,7 @@ inline ApplicationContext::OffsetDeleter::OffsetDeleter(
 
 inline ApplicationContext::OffsetDeleter::OffsetDeleter(
     void (*deleter)(void*), ptrdiff_t offset) noexcept
-    : deleter {deleter}, offset {offset} {}
+    : _deleter {deleter}, _offset {offset} {}
 // ApplicationContext::OffsetDeleter end
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -489,7 +514,12 @@ ApplicationContext::component_accessor() noexcept {
 template <typename T>
 ABSL_ATTRIBUTE_NOINLINE ApplicationContext::ComponentAccessor<T>
 ApplicationContext::component_accessor(StringView name) noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
   static thread_local ::std::tuple<const Id*, ::std::string> key;
+#pragma GCC diagnostic pop
   ::std::get<0>(key) = &TypeId<T>().ID;
   ::std::get<1>(key) = name;
   auto it = _holder_by_type_and_name.find(key);
@@ -523,13 +553,8 @@ ApplicationContext::get_or_create(StringView name) noexcept {
 // ApplicationContext end
 ////////////////////////////////////////////////////////////////////////////////
 
-template <typename T, typename... BS>
-ABSL_ATTRIBUTE_NOINLINE ApplicationContext::ComponentHolder::ComponentHolder(
-    T*, BS*...) noexcept {
-  set_type<T>();
-  add_convertible_type<T, BS...>();
-}
-
+////////////////////////////////////////////////////////////////////////////////
+// ApplicationContext::ComponentHolder begin
 template <typename T>
 ABSL_ATTRIBUTE_NOINLINE void ApplicationContext::ComponentHolder::set_option(
     T&& option) noexcept {
@@ -538,9 +563,6 @@ ABSL_ATTRIBUTE_NOINLINE void ApplicationContext::ComponentHolder::set_option(
 
 template <typename T>
 inline ptrdiff_t ApplicationContext::ComponentHolder::offset() const noexcept {
-  if (Any::descriptor<T>() == _type_id) {
-    return 0;
-  }
   return convert_offset(&Any::descriptor<T>()->type_id);
 }
 
@@ -565,6 +587,28 @@ ApplicationContext::ComponentHolder::sequence() const noexcept {
   return _sequence;
 }
 
+inline ABSL_ATTRIBUTE_ALWAYS_INLINE size_t
+ApplicationContext::ComponentHolder::accessible_path_number() const noexcept {
+  return _accessible_path;
+}
+
+inline ABSL_ATTRIBUTE_ALWAYS_INLINE const ::std::string&
+ApplicationContext::ComponentHolder::name() const noexcept {
+  return _name;
+}
+
+inline ABSL_ATTRIBUTE_ALWAYS_INLINE const Id*
+ApplicationContext::ComponentHolder::type_id() const noexcept {
+  return &(_type_id->type_id);
+}
+
+template <typename T, typename... BS>
+ABSL_ATTRIBUTE_NOINLINE ApplicationContext::ComponentHolder::ComponentHolder(
+    T*, BS*...) noexcept {
+  set_type<T>();
+  add_convertible_type<T, T, BS...>();
+}
+
 template <typename T>
 ABSL_ATTRIBUTE_NOINLINE void
 ApplicationContext::ComponentHolder::set_type() noexcept {
@@ -580,13 +624,16 @@ ApplicationContext::ComponentHolder::add_convertible_type() noexcept {}
 template <typename T, typename U, typename... US>
 ABSL_ATTRIBUTE_NOINLINE void
 ApplicationContext::ComponentHolder::add_convertible_type() noexcept {
-  if (TypeId<T>::ID != TypeId<U>::ID) {
-    _convert_offset[&TypeId<U>::ID] =
-        reinterpret_cast<ptrdiff_t>(
-            static_cast<U*>(reinterpret_cast<T*>(alignof(T)))) -
-        alignof(T);
-  }
+  _convert_offset[&TypeId<U>::ID] = reinterpret_cast<ptrdiff_t>(static_cast<U*>(
+                                        reinterpret_cast<T*>(alignof(T)))) -
+                                    alignof(T);
   add_convertible_type<T, US...>();
+}
+
+template <typename T>
+ABSL_ATTRIBUTE_NOINLINE void
+ApplicationContext::ComponentHolder::remove_convertible_type() noexcept {
+  _convert_offset.erase(&TypeId<T>::ID);
 }
 
 inline ABSL_ATTRIBUTE_ALWAYS_INLINE ::std::atomic<
@@ -677,6 +724,23 @@ ABSL_ATTRIBUTE_NOINLINE int ApplicationContext::ComponentHolder::initialize(
     Any&, ApplicationContext&, const Any&) noexcept {
   return 0;
 }
+
+inline void
+ApplicationContext::ComponentHolder::increase_accessible_path() noexcept {
+  _accessible_path++;
+}
+
+inline void
+ApplicationContext::ComponentHolder::decrease_accessible_path() noexcept {
+  _accessible_path--;
+}
+
+inline void ApplicationContext::ComponentHolder::set_name(
+    StringView name) noexcept {
+  _name = name;
+}
+// ApplicationContext::ComponentHolder end
+////////////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////////////////
 // ApplicationContext::ComponentAccessor begin

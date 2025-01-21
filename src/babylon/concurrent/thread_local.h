@@ -14,23 +14,28 @@ class EnumerableThreadLocal {
  public:
   // 可默认构造，可以移动，不能拷贝
   EnumerableThreadLocal() noexcept;
-  inline EnumerableThreadLocal(EnumerableThreadLocal&&) noexcept = default;
+  EnumerableThreadLocal(EnumerableThreadLocal&&) noexcept;
   EnumerableThreadLocal(const EnumerableThreadLocal&) = delete;
-  inline EnumerableThreadLocal& operator=(EnumerableThreadLocal&&) noexcept =
-      default;
+  EnumerableThreadLocal& operator=(EnumerableThreadLocal&&) noexcept;
   EnumerableThreadLocal& operator=(const EnumerableThreadLocal&) = delete;
 
   template <typename C>
   EnumerableThreadLocal(C&& constructor) noexcept;
 
-  void set_constructor(::std::function<void(T*)> constructor) noexcept {
-    _storage.set_constructor(constructor);
-  }
+  void set_constructor(::std::function<void(T*)> constructor) noexcept;
 
-  // 获得线程局部存储
-  inline T& local() {
-    return _storage.ensure(ThreadId::current_thread_id<T>().value);
-  }
+  // Get item exclusive to current thread.
+  inline T& local() noexcept;
+
+  // When calling intensively from single thread, allocation from memory pool
+  // for example, get item from ConcurrentVector could also significant costly
+  // than normal thread_local, because of more indirections in segmented vector
+  // lookup.
+  //
+  // Use local_fast instead of local in such scene provide a really really fast
+  // path. But local_fast may return nullptr when cache is not available, and
+  // caller should call local again when this happen.
+  inline T* local_fast() noexcept;
 
   // 遍历所有【当前或曾经存在】的线程局部存储
   template <typename C, typename = typename ::std::enable_if<
@@ -76,7 +81,20 @@ class EnumerableThreadLocal {
   }
 
  private:
+  struct Cache;
+
+  static size_t fetch_add_id() noexcept;
+
+  static thread_local Cache _s_cache;
+
   ConcurrentVector<T, 128> _storage;
+  size_t _id {fetch_add_id()};
+};
+
+template <typename T>
+struct EnumerableThreadLocal<T>::Cache {
+  size_t id {0};
+  T* item {nullptr};
 };
 
 // 典型线程局部存储为了性能一般会独占缓存行
@@ -162,10 +180,27 @@ class CompactEnumerableThreadLocal {
   Storage* _storage;
 };
 
+////////////////////////////////////////////////////////////////////////////////
+// EnumerableThreadLocal begin
 template <typename T>
 inline EnumerableThreadLocal<T>::EnumerableThreadLocal() noexcept {
   // 确保内部使用的ThreadId此时初始化，建立正确的析构顺序
   ThreadId::end<T>();
+}
+
+template <typename T>
+EnumerableThreadLocal<T>::EnumerableThreadLocal(
+    EnumerableThreadLocal&& other) noexcept
+    : EnumerableThreadLocal {} {
+  *this = ::std::move(other);
+}
+
+template <typename T>
+EnumerableThreadLocal<T>& EnumerableThreadLocal<T>::operator=(
+    EnumerableThreadLocal&& other) noexcept {
+  ::std::swap(_id, other._id);
+  ::std::swap(_storage, other._storage);
+  return *this;
 }
 
 template <typename T>
@@ -175,6 +210,45 @@ inline EnumerableThreadLocal<T>::EnumerableThreadLocal(C&& constructor) noexcept
   // 确保内部使用的ThreadId此时初始化，建立正确的析构顺序
   ThreadId::end<T>();
 }
+
+template <typename T>
+ABSL_ATTRIBUTE_NOINLINE void EnumerableThreadLocal<T>::set_constructor(
+    ::std::function<void(T*)> constructor) noexcept {
+  _storage.set_constructor(constructor);
+}
+
+template <typename T>
+inline T& EnumerableThreadLocal<T>::local() noexcept {
+  auto item = local_fast();
+  if (ABSL_PREDICT_FALSE(item == nullptr)) {
+    item = &_storage.ensure(ThreadId::current_thread_id<T>().value);
+    _s_cache.id = _id;
+    _s_cache.item = item;
+  }
+  return *item;
+}
+
+template <typename T>
+ABSL_ATTRIBUTE_ALWAYS_INLINE inline T*
+EnumerableThreadLocal<T>::local_fast() noexcept {
+  if (ABSL_PREDICT_TRUE(_s_cache.id == _id)) {
+    return _s_cache.item;
+  }
+  return nullptr;
+}
+
+template <typename T>
+ABSL_ATTRIBUTE_NOINLINE size_t
+EnumerableThreadLocal<T>::fetch_add_id() noexcept {
+  static ::std::atomic<size_t> next_id {1};
+  return next_id.fetch_add(1, ::std::memory_order_relaxed);
+}
+
+template <typename T>
+thread_local
+    typename EnumerableThreadLocal<T>::Cache EnumerableThreadLocal<T>::_s_cache;
+// EnumerableThreadLocal end
+////////////////////////////////////////////////////////////////////////////////
 
 template <typename T, size_t CACHE_LINE_NUM>
 CompactEnumerableThreadLocal<
@@ -217,7 +291,12 @@ CompactEnumerableThreadLocal<
 template <typename T, size_t CACHE_LINE_NUM>
 IdAllocator<uint32_t>&
 CompactEnumerableThreadLocal<T, CACHE_LINE_NUM>::id_allocator() noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
   static IdAllocator<uint32_t> allocator;
+#pragma GCC diagnostic pop
   return allocator;
 }
 
@@ -225,7 +304,12 @@ template <typename T, size_t CACHE_LINE_NUM>
 typename CompactEnumerableThreadLocal<T, CACHE_LINE_NUM>::Storage&
 CompactEnumerableThreadLocal<T, CACHE_LINE_NUM>::storage(
     size_t slot_index) noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
   static StorageVector storage_vector;
+#pragma GCC diagnostic pop
   return storage_vector.ensure(slot_index);
 }
 

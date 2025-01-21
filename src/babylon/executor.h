@@ -1,118 +1,342 @@
 #pragma once
 
-#include "babylon/concurrent/bounded_queue.h"
-#include "babylon/future.h"
-#include "babylon/move_only_function.h"
+#include "babylon/basic_executor.h"           // BasicExecutor
+#include "babylon/concurrent/bounded_queue.h" // ConcurrentBoundedQueue
+#include "babylon/concurrent/thread_local.h"  // EnumerableThreadLocal
+#include "babylon/coroutine/task.h"           // CoroutineTask
+#include "babylon/future.h"                   // Future
 
-#include <thread>
-#include <vector>
+#include <thread> // std::thread
+#include <vector> // std::vector
 
 BABYLON_NAMESPACE_BEGIN
 
-// 抽象执行器基类
-class Executor {
- public:
-  virtual ~Executor() noexcept = 0;
+// Unified interface to launch a task to run asynchronously. A task can be a
+// closure of
+// - normal function
+// - member function
+// - functor object, class or lambda
+// - coroutine
+//
+// These various closure packing is done by babylon::Executor, and actual
+// asynchronous execution mechanism is provide by interface of
+// babylon::BasicExecutor.
+class Executor : public BasicExecutor {
+ private:
+#if __cpp_concepts && __cpp_lib_coroutine
+  // Coroutine only copy or move args... to internal state but ignore functor
+  // object itself, lambda with capture for example. Distinguish functor object
+  // out from others to properly handle them.
+  template <typename C>
+  static constexpr bool IsPlainFunction =
+      ::std::is_function<
+          ::std::remove_pointer_t<::std::remove_reference_t<C>>>::value ||
+      ::std::is_member_function_pointer<C>::value;
 
-  // 使用执行器执行一个任务
+  // Only CoroutineTask is directly support by executor, but other coroutine
+  // could also be support by wrap in a CoroutineTask. Distinguish them out to
+  // do that wrapping only when necessary.
   template <typename C, typename... Args>
-  inline int submit(C&& callable, Args&&... args) noexcept;
+  struct IsCoroutineTask;
+  template <typename C, typename... Args>
+  static constexpr bool IsCoroutineTaskValue =
+      IsCoroutineTask<C, Args...>::value;
+#endif // __cpp_concepts && __cpp_lib_coroutine
 
-  // 使用执行器执行一个任务
-  // 仿std::async接口，通过Future交互
+  // The **effective** result type of C(Args...), generally
+  // std::invoke_result_t<C, Args...>.
+  //
+  // Coroutine is a special case, for that, in specification C(Args...) need
+  // to return a task handle which more a future-like object than a
+  // meaningful value co_return-ed by the coroutine task itself. So instead of
+  // the handle, the **effective** result for a coroutine task is considered to
+  // be type of object as if `co_await C(Args...)` in a coroutine context.
+  template <typename C, typename... Args>
+  struct Result;
+  template <typename C, typename... Args>
+  using ResultType = typename Result<C, Args...>::type;
+#if __cpp_concepts && __cpp_lib_coroutine
+  template <typename A>
+  struct AwaitResult;
+  template <typename A>
+  using AwaitResultType = typename AwaitResult<A>::type;
+#endif // __cpp_concepts && __cpp_lib_coroutine
+
+ public:
+  Executor() noexcept = default;
+  Executor(Executor&&) noexcept = default;
+  Executor(const Executor&) noexcept = default;
+  Executor& operator=(Executor&&) noexcept = default;
+  Executor& operator=(const Executor&) noexcept = default;
+  virtual ~Executor() noexcept override = default;
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Execute a callable with executor, return a future object associate with
+  // that execution.
+  //
+  // When enable -fcoroutines and -fconcepts or use -std=c++20, execute a
+  // coroutine task is also supported. The returned future will associate with
+  // that coroutine, and can be used to wait and get the co_return value just
+  // like use co_await inside another coroutine.
   template <typename F = SchedInterface, typename C, typename... Args>
-  inline Future<typename InvokeResult<C, Args...>::type, F> execute(
-      C&& callable, Args&&... args) noexcept;
+#if __cpp_concepts && __cpp_lib_coroutine
+    requires(::std::invocable<C &&, Args && ...> &&
+             !CoroutineInvocable<C &&, Args && ...>)
+#endif // __cpp_concepts && __cpp_lib_coroutine
+  inline Future<ResultType<C&&, Args&&...>, F> execute(C&& callable,
+                                                       Args&&... args) noexcept;
+#if __cpp_concepts && __cpp_lib_coroutine
+  template <typename F = SchedInterface, typename C, typename... Args>
+    requires CoroutineInvocable<C&&, Args&&...> && Executor::IsPlainFunction<C>
+  inline Future<ResultType<C&&, Args&&...>, F> execute(C&& callable,
+                                                       Args&&... args) noexcept;
+  template <typename F = SchedInterface, typename C, typename... Args>
+    requires CoroutineInvocable<C&&, Args&&...> &&
+             (!Executor::IsPlainFunction<C>)
+  inline Future<ResultType<C&&, Args&&...>, F> execute(C&& callable,
+                                                       Args&&... args) noexcept;
+#endif // __cpp_concepts && __cpp_lib_coroutine
+  //////////////////////////////////////////////////////////////////////////////
 
- protected:
-  // 实际线程池实现者，只要在自己的【线程】中执行function即可
-  virtual int invoke(MoveOnlyFunction<void(void)>&& function) noexcept;
+#if __cpp_concepts && __cpp_lib_coroutine
+  // Await a awaitable object, just like co_await it inside a coroutine context.
+  // Return a future object to wait and get that result.
+  template <typename F = SchedInterface, typename A>
+    requires coroutine::Awaitable<A, CoroutineTask<>::promise_type>
+  inline Future<AwaitResultType<A&&>, F> execute(A&& awaitable) noexcept;
+#endif // __cpp_concepts && __cpp_lib_coroutine
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Execute a callable with executor, return 0 if success scheduled.
+  //
+  // When enable -fcoroutines and -fconcepts or use -std=c++20, execute a
+  // coroutine task is also supported.
+  template <typename C, typename... Args>
+#if __cpp_concepts && __cpp_lib_coroutine
+    requires ::std::is_invocable<C&&, Args&&...>::value &&
+             (!CoroutineInvocable<C &&, Args && ...>)
+#endif // __cpp_concepts && __cpp_lib_coroutine
+  inline int submit(C&& callable, Args&&... args) noexcept;
+#if __cpp_concepts && __cpp_lib_coroutine
+  template <typename C, typename... Args>
+    requires Executor::IsCoroutineTaskValue<C&&, Args&&...> &&
+             Executor::IsPlainFunction<C>
+  inline int submit(C&& callable, Args&&... args) noexcept;
+  template <typename C, typename... Args>
+    requires CoroutineInvocable<C&&, Args&&...> &&
+             (!Executor::IsCoroutineTaskValue<C &&, Args && ...>) &&
+             Executor::IsPlainFunction<C>
+  inline int submit(C&& callable, Args&&... args) noexcept;
+  template <typename C, typename... Args>
+    requires CoroutineInvocable<C&&, Args&&...> &&
+             (!Executor::IsPlainFunction<C>)
+  inline int submit(C&& callable, Args&&... args) noexcept;
+#endif // __cpp_concepts && __cpp_lib_coroutine
+  //////////////////////////////////////////////////////////////////////////////
 
  private:
-  // 成员函数使用std::mem_fn包装后才能和其他C等价处理
-  template <typename C,
-            typename ::std::enable_if<
-                ::std::is_member_function_pointer<C>::value, int>::type = 0>
-  inline static auto normalize(C&& callable) noexcept
-      -> decltype(::std::mem_fn(callable));
+#if __cpp_concepts && __cpp_lib_coroutine
+  template <typename T>
+  inline int submit(CoroutineTask<T>&& task) noexcept;
+#endif // __cpp_concepts && __cpp_lib_coroutine
 
-  // 其他C不需要包装
-  template <typename C,
-            typename ::std::enable_if<
-                !::std::is_member_function_pointer<C>::value, int>::type = 0>
-  inline static C&& normalize(C&& callable) noexcept;
-
-  // 执行function并对Promise进行set_value
-  template <
-      typename R, typename F, typename C, typename... Args,
-      typename ::std::enable_if<!::std::is_same<void, R>::value, int>::type = 0>
-  inline static void run_and_set(Promise<R, F>& promise, C&& callable,
-                                 Args&&... args) noexcept;
-
-  // void特化
+  template <typename P, typename C, typename... Args>
+  inline static void apply_and_set_value(
+      P& promise, C&& callable, ::std::tuple<Args...>&& args_tuple) noexcept;
   template <typename F, typename C, typename... Args>
-  inline static void run_and_set(Promise<void, F>& promise, C&& callable,
-                                 Args&&... args) noexcept;
+  inline static void apply_and_set_value(
+      Promise<void, F>& promise, C&& callable,
+      ::std::tuple<Args...>&& args_tuple) noexcept;
+
+#if __cpp_concepts && __cpp_lib_coroutine
+  template <typename P, typename A>
+  CoroutineTask<> await_and_set_value(P promise, A awaitable) noexcept;
+  template <typename F, typename A>
+  CoroutineTask<> await_and_set_value(Promise<void, F> promise,
+                                      A awaitable) noexcept;
+
+  template <typename T, typename P, typename C>
+  CoroutineTask<> await_apply_and_set_value(P promise, C callable,
+                                            T args_tuple) noexcept;
+  template <typename T, typename F, typename C>
+  CoroutineTask<> await_apply_and_set_value(Promise<void, F> promise,
+                                            C callable, T args_tuple) noexcept;
+#endif // __cpp_concepts && __cpp_lib_coroutine
 };
 
-// 仿照std::async的函数版本，executor替代了内置的policy机制，可用户扩展
+#if __cpp_concepts && __cpp_lib_coroutine
+template <typename C, typename... Args>
+struct Executor::IsCoroutineTask {
+  static constexpr bool value = false;
+};
+template <typename C, typename... Args>
+  requires requires {
+             typename ::std::remove_cvref_t<::std::invoke_result_t<C, Args...>>;
+           }
+struct Executor::IsCoroutineTask<C, Args...> {
+  static constexpr bool value = IsSpecialization<
+      ::std::remove_cvref_t<::std::invoke_result_t<C, Args...>>,
+      CoroutineTask>::value;
+};
+#endif // __cpp_concepts && __cpp_lib_coroutine
+
+template <typename C, typename... Args>
+struct Executor::Result : public ::std::invoke_result<C, Args...> {};
+#if __cpp_concepts && __cpp_lib_coroutine
+template <typename C, typename... Args>
+  requires CoroutineInvocable<C, Args...>
+struct Executor::Result<C, Args...> {
+  using type = Executor::AwaitResultType<::std::invoke_result_t<C, Args...>>;
+};
+
+template <typename A>
+struct Executor::AwaitResult {};
+template <typename A>
+  requires requires {
+             typename coroutine::AwaitResultType<A,
+                                                 CoroutineTask<>::promise_type>;
+           }
+struct Executor::AwaitResult<A> {
+  using AwaitResultType =
+      coroutine::AwaitResultType<A, CoroutineTask<>::promise_type>;
+  using type = typename ::std::conditional<
+      ::std::is_rvalue_reference<AwaitResultType>::value,
+      typename ::std::remove_reference<AwaitResultType>::type,
+      AwaitResultType>::type;
+};
+#endif // __cpp_concepts && __cpp_lib_coroutine
+
+// Just like std::async, but replace policy to a more flexible executor.
 template <typename F = SchedInterface, typename C, typename... Args>
-inline Future<typename InvokeResult<C, Args...>::type, F> async(
-    Executor& executor, C&& callable, Args&&... args) noexcept {
+inline auto async(Executor& executor, C&& callable, Args&&... args) noexcept {
   return executor.execute<F>(::std::forward<C>(callable),
                              ::std::forward<Args>(args)...);
 }
 
-// 在当前线程原地运行的Executor
-struct InplaceExecutor : public Executor {
+// Sync executor run task just inside invocation of execute/submit.
+class InplaceExecutor : public Executor {
  public:
-  // 获取全局单例
   static InplaceExecutor& instance() noexcept;
 
-  InplaceExecutor() = default;
-  explicit InplaceExecutor(bool flatten) noexcept;
-
  protected:
   virtual int invoke(MoveOnlyFunction<void(void)>&& function) noexcept override;
 
  private:
-  bool _flatten {false};
-  bool _in_execution {false};
-  ::std::vector<MoveOnlyFunction<void(void)>> _pending_functions;
+  InplaceExecutor() noexcept = default;
+  InplaceExecutor(InplaceExecutor&&) = delete;
+  InplaceExecutor(const InplaceExecutor&) = delete;
+  InplaceExecutor& operator=(InplaceExecutor&&) = delete;
+  InplaceExecutor& operator=(const InplaceExecutor&) = delete;
+  virtual ~InplaceExecutor() noexcept override = default;
 };
 
-// 永远新起线程的Executor，对齐std::async的默认行为
+// Async executor launch new thread for every task execute/submit.
 struct AlwaysUseNewThreadExecutor : public Executor {
  public:
-  // 获取全局单例
   static AlwaysUseNewThreadExecutor& instance() noexcept;
 
- protected:
-  virtual int invoke(MoveOnlyFunction<void(void)>&& function) noexcept override;
-};
-
-// 转交给一组线程池运行的Executor
-class ThreadPoolExecutor : public Executor {
- public:
-  // 析构自动停止运行
-  virtual ~ThreadPoolExecutor() noexcept override;
-
-  // 初始化
-  // worker_num: 线程数
-  // queue_capacity: 中转队列容量
-  int initialize(size_t worker_num, size_t queue_capacity) noexcept;
-
-  // 停止运行
-  void stop() noexcept;
+  void join() noexcept;
 
  protected:
   virtual int invoke(MoveOnlyFunction<void(void)>&& function) noexcept override;
 
  private:
-  void keep_execute() noexcept;
+  AlwaysUseNewThreadExecutor() noexcept = default;
+  AlwaysUseNewThreadExecutor(AlwaysUseNewThreadExecutor&&) = delete;
+  AlwaysUseNewThreadExecutor(const AlwaysUseNewThreadExecutor&) = delete;
+  AlwaysUseNewThreadExecutor& operator=(AlwaysUseNewThreadExecutor&&) = delete;
+  AlwaysUseNewThreadExecutor& operator=(const AlwaysUseNewThreadExecutor&) =
+      delete;
+  virtual ~AlwaysUseNewThreadExecutor() noexcept override;
 
-  ConcurrentBoundedQueue<MoveOnlyFunction<void(void)>> _queue;
+  ::std::atomic<size_t> _running {0};
+};
+
+// Async executor use a thread pool as backend
+class ThreadPoolExecutor : public Executor {
+ public:
+  // Use **this** in worker thread, so no copy nor move
+  ThreadPoolExecutor() = default;
+  ThreadPoolExecutor(ThreadPoolExecutor&&) noexcept = delete;
+  ThreadPoolExecutor(const ThreadPoolExecutor&) noexcept = delete;
+  ThreadPoolExecutor& operator=(ThreadPoolExecutor&&) noexcept = delete;
+  ThreadPoolExecutor& operator=(const ThreadPoolExecutor&) noexcept = delete;
+  virtual ~ThreadPoolExecutor() noexcept override;
+
+  // Parameters
+  // worker_number: Threads for running task.
+  //
+  // local_capacity: Task execute/submit inside another task will add to local
+  // first, if not exceed this capacity.
+  //
+  // global_capacity: Task execute/submit to
+  // global will wait in queue first. After waiting task exceed capacity, new
+  // task execute/submit will block.
+  //
+  // enable_work_stealing: When enable, worker
+  // thread will check other worker's local waiting task before trying wait and
+  // get task from global queue.
+  //
+  // balance_interval: When set to positive, a
+  // background thread will be used to **steal** all worker's local waiting task
+  // periodically.
+  void set_worker_number(size_t worker_number) noexcept;
+  void set_local_capacity(size_t local_capacity) noexcept;
+  void set_global_capacity(size_t global_capacity) noexcept;
+  void set_enable_work_stealing(bool enable_work_stealing) noexcept;
+  template <typename R, typename P>
+  void set_balance_interval(
+      ::std::chrono::duration<R, P> balance_interval) noexcept;
+
+  int start() noexcept;
+
+  // Even when work stealing is enabled, pending local task will not be consumed
+  // if the idle worker is block waiting for global task. If schedule latency is
+  // important, user can wakeup some worker actively to make the steal happen
+  // eagerly.
+  //
+  // Just like backup-requesting mechanism, work stealing and proactive wakeup
+  // is a trade-off of cpu usage for latency. So it is up to user to decide when
+  // and how many idle workers need to wakeup.
+  void wakeup_one_worker() noexcept;
+
+  void stop() noexcept;
+
+  int ABSL_DEPRECATED("Use start instead")
+      initialize(size_t worker_num, size_t queue_capacity) noexcept;
+
+ protected:
+  virtual int invoke(MoveOnlyFunction<void(void)>&& function) noexcept override;
+
+ private:
+  enum class TaskType {
+    FUNCTION,
+    WAKEUP,
+    STOP,
+  };
+
+  struct Task {
+    TaskType type;
+    MoveOnlyFunction<void(void)> function;
+  };
+
+  using TaskQueue = ConcurrentBoundedQueue<Task>;
+
+  void keep_execute() noexcept;
+  void keep_balance() noexcept;
+  int enqueue_task(Task&& task) noexcept;
+
+  size_t _worker_number {1};
+  size_t _local_capacity {0};
+  size_t _global_capacity {1};
+  bool _enable_work_stealing {false};
+  ::std::chrono::microseconds _balance_interval {-1};
+
+  ::std::atomic<bool> _running {false};
+  ::babylon::EnumerableThreadLocal<TaskQueue> _local_task_queues;
+  TaskQueue _global_task_queue;
   ::std::vector<::std::thread> _threads;
+  ::std::thread _balance_thread;
 };
 
 BABYLON_NAMESPACE_END

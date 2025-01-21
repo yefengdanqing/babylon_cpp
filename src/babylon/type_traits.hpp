@@ -6,11 +6,18 @@
 #include "babylon/protect.h"
 // clang-format on
 
+#include <list>
+#include <map>
+#include <set>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 BABYLON_NAMESPACE_BEGIN
 
 ///////////////////////////////////////////////////////////////////////////////
 // Id begin
-inline constexpr Id::Id(StringView name) noexcept : name {name} {}
+inline constexpr Id::Id(StringView name_value) noexcept : name {name_value} {}
 
 inline constexpr bool Id::operator==(const Id& other) const noexcept {
   return this == &other;
@@ -32,19 +39,23 @@ inline ::std::basic_ostream<C, T>& operator<<(::std::basic_ostream<C, T>& os,
 ///////////////////////////////////////////////////////////////////////////////
 // TypeId begin
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wunsafe-buffer-usage"
 // 从__PRETTY_FUNCTION__表达中截取关键的类型字符串
 #if __clang__
 template <typename T>
-inline constexpr StringView TypeId<T>::get_type_name() noexcept {
-  // static babylon::StringView babylon::TypeId<${type_name}>::get_type_name()
-  // [T = ${typename}]
+inline constexpr babylon::StringView TypeId<T>::get_type_name() noexcept {
+  // clang-format off
+  // static babylon::StringView babylon::TypeId<${type_name}>::get_type_name() [T = ${type_name}]
   return StringView(
       __PRETTY_FUNCTION__ +
           __builtin_strlen("static babylon::StringView babylon::TypeId<"),
       (__builtin_strlen(__PRETTY_FUNCTION__) -
-       __builtin_strlen("static babylon::StringView "
-                        "babylon::TypeId<>::get_type_name() [T = ]")) /
+       __builtin_strlen("static babylon::StringView babylon::TypeId<>::get_type_name() [T = ]")) /
           2);
+  // clang-format on
 }
 #elif GLIBCXX_VERSION >= 920200312 // !__clang__ && GLIBCXX_VERSION >= 920200312
 template <typename T>
@@ -78,6 +89,7 @@ inline const StringView TypeId<T>::get_type_name() noexcept {
               "babylon::BasicStringView<char>]"));
 }
 #endif                             // !__clang__ && GLIBCXX_VERSION < 920200312
+#pragma GCC diagnostic pop
 
 #if !__clang__ && BABYLON_GCC_VERSION < 50000
 template <typename T>

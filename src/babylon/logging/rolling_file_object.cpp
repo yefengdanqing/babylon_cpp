@@ -2,6 +2,7 @@
 
 #if __cplusplus >= 201703L
 
+#include "babylon/regex.h"
 #include "babylon/time.h"
 
 // clang-format off
@@ -16,7 +17,6 @@
 #include <unistd.h>
 
 #include <iostream>
-#include <regex>
 
 BABYLON_NAMESPACE_BEGIN
 
@@ -45,7 +45,7 @@ void RollingFileObject::delete_expire_files() noexcept {
 
   ::std::vector<::std::string> to_be_deleted_files;
   {
-    ::std::lock_guard<::std::mutex> {_tracking_files_mutex};
+    ::std::lock_guard<::std::mutex> lock {_tracking_files_mutex};
     while (_tracking_files.size() > _max_file_number) {
       to_be_deleted_files.emplace_back(::std::move(_tracking_files.front()));
       _tracking_files.pop_front();
@@ -146,7 +146,7 @@ int RollingFileObject::open() noexcept {
   ::mkdir(_directory.c_str(), 0755);
 
   char full_file_name[_directory.size() + _file_pattern.size() + 64];
-  ::memcpy(full_file_name, _directory.c_str(), _directory.size());
+  __builtin_memcpy(full_file_name, _directory.c_str(), _directory.size());
   full_file_name[_directory.size()] = '/';
   auto bytes = format_file_name(full_file_name + _directory.size() + 1,
                                 _file_pattern.size() + 63);
@@ -165,7 +165,7 @@ int RollingFileObject::open() noexcept {
   }
 
   if (_max_file_number != SIZE_MAX) {
-    ::std::lock_guard<::std::mutex> {_tracking_files_mutex};
+    ::std::lock_guard<::std::mutex> lock {_tracking_files_mutex};
     _tracking_files.push_back(full_file_name);
   }
   auto old_fd = _fd;

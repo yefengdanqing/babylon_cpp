@@ -24,10 +24,9 @@ class Logger final {
  private:
   using ThreadLocalLogStream =
       EnumerableThreadLocal<::std::unique_ptr<LogStream>>;
-  using Storage = ::std::array<Logger::ThreadLocalLogStream,
-                               static_cast<int>(LogSeverity::NUM)>;
-  using PointerStorage = ::std::array<::std::atomic<ThreadLocalLogStream*>,
-                                      static_cast<int>(LogSeverity::NUM)>;
+  using Storage = ::std::array<Logger::ThreadLocalLogStream, LogSeverity::NUM>;
+  using PointerStorage =
+      ::std::array<::std::atomic<ThreadLocalLogStream*>, LogSeverity::NUM>;
 
   Logger(const Logger& other) noexcept;
   Logger& operator=(const Logger& other) noexcept;
@@ -62,7 +61,7 @@ class LoggerBuilder final {
  private:
   using Storage =
       ::std::array<::std::pair<LogSeverity, Logger::ThreadLocalLogStream>,
-                   static_cast<int>(LogSeverity::NUM)>;
+                   LogSeverity::NUM>;
   Storage _log_streams;
   LogSeverity _min_severity;
 };
@@ -85,7 +84,7 @@ class LoggerManager final {
   Logger& get_logger(StringView name) noexcept;
 
  private:
-  LoggerManager() = default;
+  LoggerManager() noexcept;
   ~LoggerManager() noexcept = default;
 
   void apply_to(StringView name, Logger& logger) noexcept;
@@ -100,6 +99,11 @@ class LoggerManager final {
   ConcurrentTransientHashMap<::std::string, LoggerBuilder,
                              ::std::hash<StringView>>
       _builders;
+};
+
+class DefaultLoggerManagerInitializer {
+ public:
+  static void initialize(LoggerManager& manager) noexcept;
 };
 
 // 通过&操作符将返回值转为void的工具类

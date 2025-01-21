@@ -1,6 +1,10 @@
-#include <babylon/concurrent/sched_interface.h>
+#include "babylon/concurrent/sched_interface.h"
 
-#include <gtest/gtest.h>
+// clang-format off
+#include "babylon/protect.h"
+// clang-format on
+
+#include "gtest/gtest.h"
 
 #include <future> // ::std::async
 
@@ -195,3 +199,5 @@ TEST(futex_interface, futex_value_read_write_as_atomic) {
     ASSERT_EQ(10087, futex.value().load());
   }
 }
+
+#include "babylon/unprotect.h"

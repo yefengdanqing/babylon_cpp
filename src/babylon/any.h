@@ -2,6 +2,10 @@
 
 #include "babylon/type_traits.h"
 
+// clang-format off
+#include "babylon/protect.h"
+// clang-format on
+
 #include <memory> // std::unique_ptr
 
 BABYLON_NAMESPACE_BEGIN
@@ -302,5 +306,9 @@ class Any {
 };
 
 BABYLON_NAMESPACE_END
+
+// clang-format off
+#include "babylon/unprotect.h"
+// clang-format on
 
 #include "babylon/any.hpp"
