@@ -32,8 +32,8 @@ int MemoryLocker::start() noexcept {
     return -1;
   }
   _stoped = ::std::promise<void>();
-  auto stoped = _stoped.get_future();
-  _thread = ::std::thread([&, stoped = ::std::move(stoped)] {
+  _thread = ::std::thread([&] {
+    auto stoped = _stoped.get_future();
     do {
       check_and_lock();
       _round++;
@@ -64,7 +64,12 @@ int MemoryLocker::last_errno() const noexcept {
 }
 
 MemoryLocker& MemoryLocker::instance() noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
   static MemoryLocker object;
+#pragma GCC diagnostic pop
   return object;
 }
 

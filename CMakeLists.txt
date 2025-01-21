@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(babylon VERSION 1.3.0)
+project(babylon VERSION 1.4.2)
 
 include(CTest)                      # for BUILD_TESTING option
 include(CMakePackageConfigHelpers)  # for write_basic_package_version_file
@@ -8,6 +8,10 @@ include(CMakePackageConfigHelpers)  # for write_basic_package_version_file
 option(BUILD_DEPS "Use FetchContent download and build dependencies" OFF)
 string(REPLACE "|" ";" OUTPUT_PATH "${CMAKE_PREFIX_PATH}")
 set(CMAKE_PREFIX_PATH "${OUTPUT_PATH}" CACHE FILEPATH "" FORCE)
+
+if(BUILD_TESTING AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(CMAKE_CXX_STANDARD 20)
+endif()
 
 if(BUILD_DEPS)
   include(FetchContent)
@@ -95,10 +99,10 @@ if(BUILD_TESTING AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   include(GoogleTest)   # for gtest_discover_tests
   file(GLOB_RECURSE BABYLON_TEST_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/test/test_*.cpp")
   list(FILTER BABYLON_TEST_SRCS EXCLUDE REGEX "test/test_string_view.cpp")
-  add_library(babylon_test_proto "${CMAKE_CURRENT_SOURCE_DIR}/proto/arena_example.proto")
+  add_library(babylon_test_proto "${CMAKE_CURRENT_SOURCE_DIR}/test/proto/arena_example.proto")
   target_link_libraries(babylon_test_proto protobuf::libprotobuf)
   protobuf_generate(TARGET babylon_test_proto
-    IMPORT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/proto"
+    IMPORT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/test/proto"
     PROTOC_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
   target_include_directories(babylon_test_proto PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
   set_source_files_properties(
@@ -111,7 +115,7 @@ if(BUILD_TESTING AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     string(REPLACE "." "_" TARGET_NAME ${TARGET_NAME})
     add_executable("${TARGET_NAME}" "${SRC}")
     target_include_directories("${TARGET_NAME}" PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-    target_include_directories("${TARGET_NAME}" PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/proto")
+    target_include_directories("${TARGET_NAME}" PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/test/proto")
     target_link_libraries("${TARGET_NAME}" babylon_test_proto)
     target_link_libraries("${TARGET_NAME}" babylon)
     target_link_libraries("${TARGET_NAME}" GTest::gtest_main)
@@ -125,7 +129,7 @@ if(BUILD_TESTING AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   target_link_libraries(test_string_view GTest::gtest_main)
   gtest_discover_tests(test_string_view)
 
-  add_executable(test_log "${CMAKE_CURRENT_SOURCE_DIR}/test/logging/test_custom_default_provider.cpp")
+  add_executable(test_log "${CMAKE_CURRENT_SOURCE_DIR}/test/logging/test_statically_initialize.cpp")
   target_link_libraries(test_log babylon)
   target_link_libraries(test_log GTest::gtest_main)
   gtest_discover_tests(test_log)

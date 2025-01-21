@@ -2,6 +2,12 @@
 
 #include "babylon/string_view.h" // StringView
 
+// clang-format off
+#include "babylon/protect.h"
+// clang-format on
+
+#include <cstdint> // uint8_t
+
 BABYLON_NAMESPACE_BEGIN
 
 class LogSeverity {
@@ -18,32 +24,38 @@ class LogSeverity {
   inline constexpr LogSeverity() noexcept = default;
   inline constexpr LogSeverity(LogSeverity&&) noexcept = default;
   inline constexpr LogSeverity(const LogSeverity&) noexcept = default;
-  inline constexpr LogSeverity& operator=(LogSeverity&&) noexcept = default;
-  inline constexpr LogSeverity& operator=(const LogSeverity&) noexcept =
+  inline CONSTEXPR_SINCE_CXX14 LogSeverity& operator=(LogSeverity&&) noexcept =
       default;
+  inline CONSTEXPR_SINCE_CXX14 LogSeverity& operator=(
+      const LogSeverity&) noexcept = default;
   inline ~LogSeverity() noexcept = default;
 
-  inline constexpr LogSeverity(int8_t value) noexcept;
+  inline constexpr LogSeverity(uint8_t value) noexcept;
 
-  inline constexpr operator int8_t() const noexcept;
+  inline constexpr operator uint8_t() const noexcept;
 
   inline constexpr operator StringView() const noexcept;
 
  private:
-  int8_t _value {DEBUG};
+  uint8_t _value {DEBUG};
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wunsafe-buffer-usage"
   static constexpr StringView names[NUM] = {
       [DEBUG] = "DEBUG",
       [INFO] = "INFO",
       [WARNING] = "WARNING",
       [FATAL] = "FATAL",
   };
+#pragma GCC diagnostic pop
 };
 
-inline constexpr LogSeverity::LogSeverity(int8_t value) noexcept
+inline constexpr LogSeverity::LogSeverity(uint8_t value) noexcept
     : _value {value} {}
 
-inline constexpr LogSeverity::operator int8_t() const noexcept {
+inline constexpr LogSeverity::operator uint8_t() const noexcept {
   return _value;
 }
 
@@ -58,3 +70,5 @@ inline ::std::basic_ostream<C, T>& operator<<(::std::basic_ostream<C, T>& os,
 }
 
 BABYLON_NAMESPACE_END
+
+#include "babylon/unprotect.h"

@@ -6,12 +6,18 @@
 #include BABYLON_EXTERNAL(absl/base/optimization.h) // ABSL_PREDICT_FALSE
 // clang-format on
 
+#include "babylon/protect.h"
+
 #include <cassert> // ::assert
 
 BABYLON_NAMESPACE_BEGIN
 
 ////////////////////////////////////////////////////////////////////////////////
 // Any::TypeDescriptor begin
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wglobal-constructors"
 template <typename T, typename E>
 __attribute__((init_priority(101)))
 Any::Meta Any::TypeDescriptor<T, E>::meta_for_instance {
@@ -33,6 +39,7 @@ Any::Meta Any::TypeDescriptor<T, E>::meta_for_inplace_non_trivial {
              &TypeDescriptor<typename ::std::decay<T>::type>().descriptor) |
          static_cast<uint64_t>(HolderType::INPLACE_NON_TRIVIAL) << 56 |
          static_cast<uint64_t>(Type::INSTANCE) << 48};
+#pragma GCC diagnostic pop
 
 #if __cplusplus < 201703L
 template <typename T>
@@ -72,7 +79,7 @@ void Any::TypeDescriptor<
 
 template <typename T>
 void* Any::TypeDescriptor<
-    T, typename ::std::enable_if< ::std::is_copy_constructible<T>::value>::
+    T, typename ::std::enable_if<::std::is_copy_constructible<T>::value>::
            type>::copy_creater(const void* object) noexcept {
   return new T(*reinterpret_cast<const T*>(object));
 }
@@ -332,28 +339,21 @@ inline bool Any::is_reference() const noexcept {
 template <typename T>
 inline T Any::as() const noexcept {
   switch (_meta.m.type) {
-    case Type::INT64:
-      return *reinterpret_cast<const int64_t*>(const_raw_pointer());
-    case Type::INT32:
-      return *reinterpret_cast<const int32_t*>(const_raw_pointer());
-    case Type::INT16:
-      return *reinterpret_cast<const int16_t*>(const_raw_pointer());
-    case Type::INT8:
-      return *reinterpret_cast<const int8_t*>(const_raw_pointer());
-    case Type::BOOLEAN:
-      return *reinterpret_cast<const bool*>(const_raw_pointer());
-    case Type::UINT64:
-      return *reinterpret_cast<const uint64_t*>(const_raw_pointer());
-    case Type::UINT32:
-      return *reinterpret_cast<const uint32_t*>(const_raw_pointer());
-    case Type::UINT16:
-      return *reinterpret_cast<const uint16_t*>(const_raw_pointer());
-    case Type::UINT8:
-      return *reinterpret_cast<const uint8_t*>(const_raw_pointer());
-    case Type::DOUBLE:
-      return *reinterpret_cast<const double*>(const_raw_pointer());
-    case Type::FLOAT:
-      return *reinterpret_cast<const float*>(const_raw_pointer());
+#define __BABYLON_TMP_GEN(etype, ctype) \
+  case Type::etype:                     \
+    return static_cast<T>(*reinterpret_cast<const ctype*>(const_raw_pointer()));
+    __BABYLON_TMP_GEN(INT64, int64_t)
+    __BABYLON_TMP_GEN(INT32, int32_t)
+    __BABYLON_TMP_GEN(INT16, int16_t)
+    __BABYLON_TMP_GEN(INT8, int8_t)
+    __BABYLON_TMP_GEN(BOOLEAN, bool)
+    __BABYLON_TMP_GEN(UINT64, uint64_t)
+    __BABYLON_TMP_GEN(UINT32, uint32_t)
+    __BABYLON_TMP_GEN(UINT16, uint16_t)
+    __BABYLON_TMP_GEN(UINT8, uint8_t)
+    __BABYLON_TMP_GEN(DOUBLE, double)
+    __BABYLON_TMP_GEN(FLOAT, float)
+#undef __BABYLON_TMP_GEN
     default:
       return 0;
   }
@@ -419,7 +419,7 @@ inline const void* Any::const_raw_pointer() const noexcept {
 }
 
 template <typename T,
-          typename ::std::enable_if< ::std::is_integral<T>::value, int>::type>
+          typename ::std::enable_if<::std::is_integral<T>::value, int>::type>
 inline void Any::construct_inplace(T&& value) noexcept {
   _holder.uint64_v = value;
 }
@@ -470,3 +470,5 @@ inline ::std::unique_ptr<void, void (*)(void*)> Any::release() noexcept {
 ///////////////////////////////////////////////////////////////////////////////
 
 BABYLON_NAMESPACE_END
+
+#include "babylon/unprotect.h"

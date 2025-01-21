@@ -7,9 +7,9 @@ BABYLON_NAMESPACE_BEGIN
 ////////////////////////////////////////////////////////////////////////////////
 // ApplicationContext::OffsetDeleter begin
 void ApplicationContext::OffsetDeleter::operator()(void* ptr) noexcept {
-  if (deleter) {
-    auto address = reinterpret_cast<intptr_t>(ptr) + offset;
-    deleter(reinterpret_cast<void*>(address));
+  if (_deleter) {
+    auto address = reinterpret_cast<intptr_t>(ptr) + _offset;
+    _deleter(reinterpret_cast<void*>(address));
   }
 }
 // ApplicationContext::OffsetDeleter end
@@ -18,7 +18,12 @@ void ApplicationContext::OffsetDeleter::operator()(void* ptr) noexcept {
 ////////////////////////////////////////////////////////////////////////////////
 // ApplicationContext begin
 ApplicationContext& ApplicationContext::instance() noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
   static ApplicationContext singleton;
+#pragma GCC diagnostic pop
   return singleton;
 }
 
@@ -26,45 +31,46 @@ ApplicationContext::~ApplicationContext() noexcept {
   clear();
 }
 
-int ApplicationContext::register_component(
+void ApplicationContext::register_component(
     ::std::unique_ptr<ComponentHolder>&& holder) noexcept {
   return register_component(::std::move(holder), "");
 }
 
-int ApplicationContext::register_component(
+void ApplicationContext::register_component(
     ::std::unique_ptr<ComponentHolder>&& holder, StringView name) noexcept {
   if (!holder) {
-    BABYLON_LOG(WARNING) << "register get null ComponentHolder";
-    return -1;
+    return;
   }
 
   auto pholder = holder.get();
   _holders.emplace_back(::std::move(holder));
 
+  pholder->set_name(name);
   pholder->for_each_type([&](const Id* type) {
     {
       auto result = _holder_by_type.emplace(type, pholder);
-      // type冲突，设置无法只按type获取
-      if (result.second == false) {
-        BABYLON_LOG(DEBUG) << "register different component of same type "
-                           << *type << " will disable wireup by type";
+      // Find one type only accessible path
+      if (result.second) {
+        pholder->increase_accessible_path();
+      } else if (result.first->second) {
+        // Remove one type only accessible path
+        result.first->second->decrease_accessible_path();
         result.first->second = nullptr;
       }
     }
     if (!name.empty()) {
       ::std::tuple<const Id*, ::std::string> key {type, name};
       auto result = _holder_by_type_and_name.emplace(key, pholder);
-      // type and name冲突
-      if (result.second == false) {
-        BABYLON_LOG(WARNING)
-            << "register different component of same type " << *type
-            << " with same name " << name << " will disable wireup";
+      // Find one type name accessible path
+      if (result.second) {
+        pholder->increase_accessible_path();
+      } else if (result.first->second) {
+        // Remove one type name only accessible path
+        result.first->second->decrease_accessible_path();
         result.first->second = nullptr;
       }
     }
   });
-
-  return 0;
 }
 
 ApplicationContext::ComponentIterator ApplicationContext::begin() noexcept {
@@ -109,7 +115,6 @@ Any ApplicationContext::ComponentHolder::create(ApplicationContext& context,
 
 void ApplicationContext::ComponentHolder::for_each_type(
     const ::std::function<void(const Id*)>& callback) const noexcept {
-  callback(&_type_id->type_id);
   for (auto& pair : _convert_offset) {
     callback(pair.first);
   }
@@ -173,13 +178,19 @@ void ApplicationContext::ComponentHolder::create_singleton(
   }
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
+#pragma GCC diagnostic ignored "-Wglobal-constructors"
 ApplicationContext::EmptyComponentHolder
     ApplicationContext::EMPTY_COMPONENT_HOLDER;
+#pragma GCC diagnostic pop
 
 ////////////////////////////////////////////////////////////////////////////////
 // ApplicationContext::EmptyComponentHolder begin
 ApplicationContext::EmptyComponentHolder::EmptyComponentHolder() noexcept
-    : ComponentHolder {static_cast<void*>(nullptr)} {}
+    : ComponentHolder {static_cast<Void*>(nullptr)} {}
 
 Any ApplicationContext::EmptyComponentHolder::create_instance() noexcept {
   return {};

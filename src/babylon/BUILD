@@ -12,7 +12,8 @@ cc_library(
     ':move_only_function', ':serialization',
     ':string_view', ':time', ':type_traits',
     '//src/babylon/anyflow', '//src/babylon/concurrent',
-    '//src/babylon/logging', '//src/babylon/reusable',
+    '//src/babylon/coroutine', '//src/babylon/logging',
+    '//src/babylon/reusable',
   ],
 )
 
@@ -68,13 +69,14 @@ cc_library(
 )
 
 cc_library(
-  name = 'environment',
-  hdrs = ['environment.h', 'protect.h', 'unprotect.h'],
+  name = 'basic_executor',
+  srcs = ['basic_executor.cpp'],
+  hdrs = ['basic_executor.h'],
   copts = BABYLON_COPTS,
   includes = ['//src'],
   strip_include_prefix = '//src',
   deps = [
-    '@com_google_absl//absl/base:core_headers',
+    ':move_only_function',
   ],
 )
 
@@ -87,7 +89,21 @@ cc_library(
   strip_include_prefix = '//src',
   deps = [
     ':future',
+    '//src/babylon/coroutine:task',
     '//src/babylon/concurrent:bounded_queue',
+    '//src/babylon/concurrent:thread_local',
+    '@com_google_absl//absl/types:optional',
+  ],
+)
+
+cc_library(
+  name = 'environment',
+  hdrs = ['environment.h', 'protect.h', 'unprotect.h'],
+  copts = BABYLON_COPTS,
+  includes = ['//src'],
+  strip_include_prefix = '//src',
+  deps = [
+    '@com_google_absl//absl/base:core_headers',
   ],
 )
 
@@ -132,6 +148,17 @@ cc_library(
   name = 'new',
   srcs = ['new.cpp'],
   hdrs = ['new.h'],
+  copts = BABYLON_COPTS,
+  includes = ['//src'],
+  strip_include_prefix = '//src',
+  deps = [
+    ':environment',
+  ],
+)
+
+cc_library(
+  name = 'regex',
+  hdrs = ['regex.h'],
   copts = BABYLON_COPTS,
   includes = ['//src'],
   strip_include_prefix = '//src',
@@ -207,5 +234,6 @@ cc_library(
   deps = [
     ':absl_base_internal_invoke',
     ':string_view',
+    '@com_google_absl//absl/utility',
   ],
 )

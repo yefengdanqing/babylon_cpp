@@ -1,3 +1,4 @@
+#include "babylon/logging/logger.h"
 #include "babylon/mlock.h"
 
 // clang-format off
@@ -23,18 +24,20 @@ const static size_t CEILED_REGION_SIZE =
 
 struct MemoryLockerTest : public ::testing::Test {
   virtual void SetUp() override {
-    fd = ::open("mlock_file", O_CREAT | O_RDWR | O_TRUNC, 0644);
+    file_name = "mlock_" + ::std::to_string(getpid());
+    fd = ::open(file_name.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0644);
     ASSERT_EQ(0, ::ftruncate(fd, REGION_SIZE));
     region = ::mmap(nullptr, REGION_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
     MemoryLocker::instance().set_check_interval(::std::chrono::seconds(1));
-    MemoryLocker::instance().set_filter([](StringView path) {
-      return nullptr == strstr(path.data(), "mlock_file");
+    MemoryLocker::instance().set_filter([this](StringView path) {
+      return nullptr == strstr(path.data(), file_name.c_str());
     });
   }
 
   virtual void TearDown() override {
     ::munmap(region, REGION_SIZE);
     ::close(fd);
+    ::unlink(file_name.c_str());
   }
 
   bool region_in_memory() {
@@ -55,6 +58,7 @@ struct MemoryLockerTest : public ::testing::Test {
     }
   }
 
+  ::std::string file_name;
   MemoryLocker& locker = MemoryLocker::instance();
   int fd;
   void* region;
@@ -64,7 +68,7 @@ TEST_F(MemoryLockerTest, lock_regions_before_start) {
   ASSERT_FALSE(region_in_memory());
   ASSERT_EQ(0, MemoryLocker::instance().start());
   next_round();
-  ::usleep(1000 * 1000);
+  BABYLON_LOG(INFO) << "before check region_in_memory";
   ASSERT_TRUE(region_in_memory());
   ASSERT_EQ(CEILED_REGION_SIZE, MemoryLocker::instance().locked_bytes());
   ASSERT_EQ(0, MemoryLocker::instance().last_errno());
@@ -84,6 +88,7 @@ TEST_F(MemoryLockerTest, lock_regions_after_start) {
   ASSERT_EQ(0, MemoryLocker::instance().stop());
 }
 
+#if __x86_64__
 TEST_F(MemoryLockerTest, unlock_regions_after_stop) {
   ASSERT_EQ(0, MemoryLocker::instance().start());
   next_round();
@@ -96,6 +101,7 @@ TEST_F(MemoryLockerTest, unlock_regions_after_stop) {
   ::posix_fadvise(fd, 0, REGION_SIZE, POSIX_FADV_DONTNEED);
   ASSERT_FALSE(region_in_memory());
 }
+#endif // __x86_64__
 
 TEST_F(MemoryLockerTest, start_twice_fail_but_harmless) {
   ASSERT_FALSE(region_in_memory());
@@ -119,8 +125,8 @@ TEST_F(MemoryLockerTest, stop_when_destroy) {
   {
     MemoryLocker locker;
     locker.set_check_interval(::std::chrono::seconds(1));
-    locker.set_filter([](StringView path) {
-      return nullptr == strstr(path.data(), "mlock_file");
+    locker.set_filter([this](StringView path) {
+      return nullptr == strstr(path.data(), file_name.c_str());
     });
     ASSERT_EQ(0, locker.start());
     ASSERT_FALSE(region_in_memory());

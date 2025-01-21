@@ -105,7 +105,6 @@
 // 通过『任意』引入一个c++头文件来引入一些基础环境信息，例如
 // - GLIBCXX/LIBCPP标准库版本信息
 // - _GLIBCXX_USE_CXX11_ABI开关信息
-// - __cpp_系列特性判断信息
 // 选择cstddef是因为其本体只包含少量宏定义，相对比较轻量
 #include <cstddef>
 
@@ -132,6 +131,13 @@
 #define BABYLON_NAMESPACE_BEGIN namespace babylon {
 #define BABYLON_NAMESPACE_END }
 
+#define BABYLON_COROUTINE_NAMESPACE_BEGIN \
+  BABYLON_NAMESPACE_BEGIN                 \
+  namespace coroutine {
+#define BABYLON_COROUTINE_NAMESPACE_END \
+  }                                     \
+  BABYLON_NAMESPACE_END
+
 // 早期arena patch版本
 // - protobuf_3-2-1-8_PD_BL
 // - protobuf_3-2-1-9_PD_BL
@@ -149,8 +155,8 @@
 #endif
 
 #if BABYLON_HAS_INCLUDE(<version>)
-#include <version>
-#endif // BABYLON_HAS_INCLUDE(<version>)
+#include <version> // __cpp_xxxx
+#endif             // BABYLON_HAS_INCLUDE(<version>)
 
 // clang-format off
 // 在bazel环境启用treat_warnings_as_errors

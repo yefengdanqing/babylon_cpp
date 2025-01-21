@@ -1,5 +1,7 @@
 #include "babylon/any.h"
 
+#include "babylon/protect.h"
+
 BABYLON_NAMESPACE_BEGIN
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -65,3 +67,5 @@ Any& Any::ref(const Descriptor* descriptor, void* instance) noexcept {
 }
 
 BABYLON_NAMESPACE_END
+
+#include "babylon/unprotect.h"

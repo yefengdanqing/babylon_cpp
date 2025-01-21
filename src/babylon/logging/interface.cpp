@@ -27,7 +27,13 @@ class DefaultLogStreamProvider : public LogStreamProvider {
  public:
   virtual LogStream& stream(int severity, StringView file,
                             int line) noexcept override {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
+#pragma GCC diagnostic ignored "-Wglobal-constructors"
     static thread_local DefaultLogStream stream;
+#pragma GCC diagnostic pop
     stream.set_severity(static_cast<LogSeverity>(severity));
     stream.set_file(file);
     stream.set_line(line);
@@ -37,7 +43,14 @@ class DefaultLogStreamProvider : public LogStreamProvider {
 #if __cplusplus < 201703L
 constexpr StringView DefaultLogStreamProvider::SEVERITY_NAME[];
 #endif // __cplusplus < 201703L
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
+#pragma GCC diagnostic ignored "-Wglobal-constructors"
 static DefaultLogStreamProvider s_default_provider;
+#pragma GCC diagnostic pop
 // DefaultLogStreamProvider end
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -51,7 +64,13 @@ void LogInterface::set_min_severity(int severity) noexcept {
 
 void LogInterface::set_provider(
     ::std::unique_ptr<LogStreamProvider>&& provider) noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
+#pragma GCC diagnostic ignored "-Wglobal-constructors"
   static ::std::unique_ptr<LogStreamProvider> s_provider;
+#pragma GCC diagnostic pop
   s_provider = ::std::move(provider);
   if (s_provider) {
     _s_provider = s_provider.get();

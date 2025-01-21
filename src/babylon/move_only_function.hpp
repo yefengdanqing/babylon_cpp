@@ -77,33 +77,4 @@ inline R MoveOnlyFunction<R(Args...)>::operator()(Args... args) const {
   return _function(::std::forward<Args>(args)...);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// UncomposableBindArgument begin
-template <typename T>
-inline UncomposableBindArgument<T>::UncomposableBindArgument(T&& value)
-    : value(::std::move(value)) {}
-
-template <typename T>
-inline UncomposableBindArgument<T>::UncomposableBindArgument(const T& value)
-    : value(value) {}
-
-template <typename T>
-inline UncomposableBindArgument<T>::operator T&() noexcept {
-  return value;
-}
-
-template <typename T>
-inline UncomposableBindArgument<T>::operator const T&() const noexcept {
-  return value;
-}
-
-template <typename T>
-inline UncomposableBindArgument<typename ::std::decay<T>::type>
-uncomposable_bind_argument(T&& value) {
-  return UncomposableBindArgument<typename ::std::decay<T>::type>(
-      ::std::forward<T>(value));
-}
-// UncomposableBindArgument end
-////////////////////////////////////////////////////////////////////////////////
-
 BABYLON_NAMESPACE_END

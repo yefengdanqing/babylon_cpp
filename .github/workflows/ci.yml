@@ -2,172 +2,176 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
   pull_request:
-    branches: ["main"]
+    branches: [main]
 
 jobs:
-  gcc12-basic-asan:
-    runs-on: ubuntu-latest
+  basic:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [{name: gcc, flag: --action_env=CC=gcc-14}, {name: clang, flag: --action_env=CC=clang-18}]
+        mode: [{name: dbg, flag: --compilation_mode=dbg}, {name: opt, flag: --compilation_mode=opt}]
+        std: [{name: c++20, flag: --cxxopt=-std=c++20}, {name: c++14, flag: --cxxopt=-std=c++14}]
+        stdlib: [{name: stdlibc++}, {name: libc++, flag: --cxxopt=-stdlib=libc++ --linkopt=-stdlib=libc++}]
+        feature: [{name: asan, flag: --features=asan}, {name: tsan, flag: --features=tsan}]
+        exclude:
+        - compiler: {name: gcc}
+          stdlib: {name: libc++}
+        - std: {name: c++14}
+          feature: {name: tsan}
+    runs-on: ubuntu-24.04
+    name: basic-${{matrix.compiler.name}}-${{matrix.mode.name}}-${{matrix.std.name}}-${{matrix.stdlib.name}}-${{matrix.feature.name}}
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
       with:
         path: bazel-disk
-        key: bazel-disk-gcc12-basic-asan-${{github.sha}}
-        restore-keys: bazel-disk-gcc12-basic-asan-
-    - run: bazel test --disk_cache=bazel-disk --action_env=CC=gcc-12 --features=asan test/...
+        key: bazel-disk-basic-${{matrix.compiler.name}}-${{matrix.mode.name}}-${{matrix.std.name}}-${{matrix.stdlib.name}}-${{matrix.feature.name}}-${{github.sha}}
+        restore-keys: bazel-disk-basic-${{matrix.compiler.name}}-${{matrix.mode.name}}-${{matrix.std.name}}-${{matrix.stdlib.name}}-${{matrix.feature.name}}-
+    - if: ${{matrix.stdlib.name == 'libc++'}}
+      run: sudo apt install libc++-18-dev libc++abi-18-dev
+    - run: bazel test --disk_cache=bazel-disk --verbose_failures --test_output=errors ${{matrix.compiler.flag}} ${{matrix.mode.flag}} ${{matrix.std.flag}} ${{matrix.stdlib.flag}} ${{matrix.feature.flag}} test/...
+    - uses: actions/cache/save@v4
+      if: always()
+      with:
+        path: bazel-disk
+        key: bazel-disk-basic-${{matrix.compiler.name}}-${{matrix.mode.name}}-${{matrix.std.name}}-${{matrix.stdlib.name}}-${{matrix.feature.name}}-${{github.sha}}
 
-  gcc12-basic-tsan:
-    runs-on: ubuntu-latest
+  compatible:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [{name: gcc-9, flag: --action_env=CC=gcc-9}]
+    runs-on: ubuntu-20.04
+    name: compatible-${{matrix.compiler.name}}
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
       with:
         path: bazel-disk
-        key: bazel-disk-gcc12-basic-tsan-${{github.sha}}
-        restore-keys: bazel-disk-gcc12-basic-tsan-
-    - run: bazel test --disk_cache=bazel-disk --action_env=CC=gcc-12 --features=tsan test/...
+        key: bazel-disk-compatible-${{matrix.compiler.name}}-${{github.sha}}
+        restore-keys: bazel-disk-compatible-${{matrix.compiler.name}}
+    - run: bazel test --disk_cache=bazel-disk --verbose_failures --test_output=errors ${{matrix.compiler.flag}} test/...
+    - uses: actions/cache/save@v4
+      if: always()
+      with:
+        path: bazel-disk
+        key: bazel-disk-compatible-${{matrix.compiler.name}}-${{github.sha}}
 
-  gcc12-arenastring-asan:
-    runs-on: ubuntu-latest
+  arenastring:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [{name: gcc, flag: --action_env=CC=gcc-14}, {name: clang, flag: --action_env=CC=clang-18}]
+        stdlib: [{name: stdlibc++}, {name: libc++, flag: --cxxopt=-stdlib=libc++ --linkopt=-stdlib=libc++}]
+        mutable: [{name: default}, {name: half, flag: --config=arenastring}, {name: full, flag: --config=mutable-donated-string}]
+        exclude:
+        - compiler: {name: gcc}
+          stdlib: {name: libc++}
+        - compiler: {name: clang}
+          mutable: {name: half}
+        - compiler: {name: clang}
+          mutable: {name: full}
+    runs-on: ubuntu-24.04
+    name: arenastring-${{matrix.compiler.name}}-${{matrix.stdlib.name}}-${{matrix.mutable.name}}
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
       with:
         path: bazel-disk
-        key: bazel-disk-gcc12-arenastring-${{github.sha}}
-        restore-keys: bazel-disk-gcc12-arenastring-
-    - run: sed -i "/single_version_override.*protobuf/s/version = '[^']*'/version = '25.3.arenastring'/" MODULE.bazel
-    - run: bazel test --disk_cache=bazel-disk --action_env=CC=gcc-12 --config=arenastring --features=asan test/...
+        key: bazel-disk-arenastring-${{matrix.compiler.name}}-${{matrix.stdlib.name}}-${{matrix.mutable.name}}-${{github.sha}}
+        restore-keys: bazel-disk-arenastring-${{matrix.compiler.name}}-${{matrix.stdlib.name}}-${{matrix.mutable.name}}-
+    - if: ${{matrix.stdlib.name == 'libc++'}}
+      run: sudo apt install libc++-18-dev libc++abi-18-dev
+    - run: sed -i "/single_version_override.*protobuf/s/version = '[^']*'/version = '28.3.arenastring'/" MODULE.bazel
+    - run: bazel test --compilation_mode=opt --disk_cache=bazel-disk --verbose_failures --test_output=errors --features=asan --registry=https://bcr.bazel.build --registry=file://%workspace%/registry ${{matrix.compiler.flag}} ${{matrix.stdlib.flag}} ${{matrix.mutable.flag}} test/...
+    - uses: actions/cache/save@v4
+      if: always()
+      with:
+        path: bazel-disk
+        key: bazel-disk-arenastring-${{matrix.compiler.name}}-${{matrix.stdlib.name}}-${{matrix.mutable.name}}-${{github.sha}}
 
-  gcc12-mutable-donated-string-asan:
-    runs-on: ubuntu-latest
+  cpp14-coroutine:
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
       with:
         path: bazel-disk
-        key: bazel-disk-gcc12-mutable-donated-string-${{github.sha}}
-        restore-keys: bazel-disk-gcc12-mutable-donated-string-
-    - run: sed -i "/single_version_override.*protobuf/s/version = '[^']*'/version = '25.3.arenastring'/" MODULE.bazel
-    - run: bazel test --disk_cache=bazel-disk --action_env=CC=gcc-12 --config=mutable-donated-string --features=asan test/...
+        key: bazel-disk-c++14-coroutine-${{github.sha}}
+        restore-keys: bazel-disk-c++14-coroutine-
+    - run: sed -i "/single_version_override.*protobuf/s/version = '[^']*'/version = '27.5'/" MODULE.bazel
+    - run: bazel test --disk_cache=bazel-disk --verbose_failures --test_output=errors --action_env=CC=gcc-12 --cxxopt=-std=c++14 --cxxopt=-fcoroutines --cxxopt=-fconcepts test/...
+    - uses: actions/cache/save@v4
+      if: always()
+      with:
+        path: bazel-disk
+        key: bazel-disk-c++14-coroutine-${{github.sha}}
 
-  gcc12-cxx14-asan:
-    runs-on: ubuntu-latest
+  aarch64:
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
       with:
         path: bazel-disk
-        key: bazel-disk-gcc12-cxx14-asan-${{github.sha}}
-        restore-keys: bazel-disk-gcc12-cxx14-asan-
-    - run: bazel test --disk_cache=bazel-disk --action_env=CC=gcc-12 --cxxopt=-std=c++14 --cxxopt=-faligned-new --features=asan test/...
-
-  clang14-basic-asan:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/cache@v4
-      with:
-        path: bazel-disk
-        key: bazel-disk-clang14-basic-asan-${{github.sha}}
-        restore-keys: bazel-disk-clang14-basic-asan-
-    - run: bazel test --disk_cache=bazel-disk --action_env=CC=clang-14 --cxxopt=-stdlib=libc++ --linkopt=-stdlib=libc++ --features=asan test/...
-
-  clang14-basic-tsan:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/cache@v4
-      with:
-        path: bazel-disk
-        key: bazel-disk-clang14-basic-tsan-${{github.sha}}
-        restore-keys: bazel-disk-clang14-basic-tsan-
-    - run: bazel test --disk_cache=bazel-disk --action_env=CC=clang-14 --cxxopt=-stdlib=libc++ --linkopt=-stdlib=libc++ --features=tsan test/...
-
-  clang14-arenastring-asan:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/cache@v4
-      with:
-        path: bazel-disk
-        key: bazel-disk-clang14-arenastring-${{github.sha}}
-        restore-keys: bazel-disk-clang14-arenastring-
-    - run: sed -i "/single_version_override.*protobuf/s/version = '[^']*'/version = '25.3.arenastring'/" MODULE.bazel
-    - run: bazel test --disk_cache=bazel-disk --action_env=CC=clang-14 --cxxopt=-stdlib=libc++ --linkopt=-stdlib=libc++ --config=arenastring --features=asan test/...
-
-  clang14-mutable-donated-string-asan:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/cache@v4
-      with:
-        path: bazel-disk
-        key: bazel-disk-clang14-mutable-donated-string-${{github.sha}}
-        restore-keys: bazel-disk-clang14-mutable-donated-string-
-    - run: sed -i "/single_version_override.*protobuf/s/version = '[^']*'/version = '25.3.arenastring'/" MODULE.bazel
-    - run: bazel test --disk_cache=bazel-disk --action_env=CC=clang-14 --cxxopt=-stdlib=libc++ --linkopt=-stdlib=libc++ --config=mutable-donated-string --features=asan test/...
-
-  clang14-cxx14-asan:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/cache@v4
-      with:
-        path: bazel-disk
-        key: bazel-disk-clang14-cxx14-asan-${{github.sha}}
-        restore-keys: bazel-disk-clang14-cxx14-asan-
-    - run: bazel test --disk_cache=bazel-disk --action_env=CC=clang-14 --cxxopt=-stdlib=libc++ --linkopt=-stdlib=libc++ --cxxopt=-std=c++14 --cxxopt=-faligned-new --features=asan test/...
-
-  gcc12-aarch64-asan:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/cache@v4
-      with:
-        path: bazel-disk
-        key: bazel-disk-gcc12-aarch64-asan-${{github.sha}}
-        restore-keys: bazel-disk-gcc12-aarch64-asan-
+        key: bazel-disk-aarch64-${{github.sha}}
+        restore-keys: bazel-disk-aarch64-
     - run: sudo apt update
-    - run: sudo apt install g++-12-aarch64-linux-gnu
+    - run: sudo apt install g++-14-aarch64-linux-gnu
     - run: sudo apt install qemu-user
     - run: sudo ln -s /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 /lib/
-    - run: bazel test --disk_cache=bazel-disk --platforms='@cross_config_toolchain//:cross' --action_env=CROSS_CC=/usr/bin/aarch64-linux-gnu-gcc-12 --features=-default_link_flags --features=asan --linkopt=-fuse-ld=gold --test_env=LD_LIBRARY_PATH=/usr/aarch64-linux-gnu/lib --test_env=ASAN_OPTIONS=detect_odr_violation=1:detect_leaks=0 test/...
+    - run: bazel test --disk_cache=bazel-disk --verbose_failures --test_output=errors --platforms='@cross_config_toolchain//:cross' --action_env=CROSS_CC=/usr/bin/aarch64-linux-gnu-gcc-14 --features=-default_link_flags --test_env=LD_LIBRARY_PATH=/usr/aarch64-linux-gnu/lib -- test/... -test/logging:test_log_statically
+    - uses: actions/cache/save@v4
+      if: always()
+      with:
+        path: bazel-disk
+        key: bazel-disk-aarch64-${{github.sha}}
 
   workspace:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
       with:
         path: bazel-disk
         key: bazel-disk-workspace-${{github.sha}}
         restore-keys: bazel-disk-workspace-
-    - run: bazel test --enable_bzlmod=false --disk_cache=bazel-disk --action_env=CC=gcc-12 --features=asan test/...
+    - run: bazel test --disk_cache=bazel-disk --verbose_failures --test_output=errors --enable_bzlmod=false test/...
+    - uses: actions/cache/save@v4
+      if: always()
+      with:
+        path: bazel-disk
+        key: bazel-disk-workspace-${{github.sha}}
 
   coverage:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
       with:
         path: bazel-disk
         key: bazel-disk-coverage-${{github.sha}}
         restore-keys: bazel-disk-coverage-
-    - run: bazel coverage --disk_cache=bazel-disk --combined_report=lcov --instrumentation_filter='src/babylon,-src/babylon/reusable/patch' test/...
+    - run: bazel coverage --disk_cache=bazel-disk --verbose_failures --test_output=errors --combined_report=lcov --instrumentation_filter='src/babylon,-src/babylon/reusable/patch' test/...
     - run: .github/workflows/filter_lcov.sh
     - uses: coverallsapp/github-action@v2
       with:
         github-token: ${{github.token}}
         file: bazel-out/_coverage/_coverage_report.lcov
+    - uses: actions/cache/save@v4
+      if: always()
+      with:
+        path: bazel-disk
+        key: bazel-disk-coverage-${{github.sha}}
 
   cmake:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - uses: hendrikmuhs/ccache-action@v1.2
-    - run: cmake -Bbuild -DBUILD_DEPS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+    - run: cmake -Bbuild -DBUILD_DEPS=ON -DBUILD_TESTING=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
     - run: cmake --build build --parallel $(nproc)
     - run: ctest --test-dir build --output-on-failure --parallel $(nproc)
