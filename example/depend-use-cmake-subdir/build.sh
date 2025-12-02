@@ -1,9 +1,9 @@
 #!/bin/sh
 set -ex
 
-URL=https://github.com/baidu/babylon/releases/download/v1.4.2/v1.4.2.tar.gz
-NAME=babylon-1.4.2
-SHA256=d60ee9cd86a777137bf021c8861e97438a69cc857659d5eb39af9e8464434cf1
+URL=https://github.com/baidu/babylon/archive/6de305913d5e632a19798573ef110955cbdc4560.tar.gz
+NAME=babylon-6de305913d5e632a19798573ef110955cbdc4560
+SHA256=5ec4a3fc659d69983453abcbc66a2a03b57fe87774105fff76c90895a3a168d3
 if ! echo "$SHA256 $NAME.tar.gz" | sha256sum -c; then
   wget $URL --continue -O $NAME.tar.gz
 fi
@@ -40,6 +40,16 @@ fi
 rm -rf $NAME protobuf
 tar xzf $NAME.tar.gz
 mv $NAME protobuf
+
+URL=https://github.com/fmtlib/fmt/archive/refs/tags/8.1.1.tar.gz
+NAME=fmt-8.1.1
+SHA256=3d794d3cf67633b34b2771eb9f073bde87e846e0d395d254df7b211ef1ec7346
+if ! echo "$SHA256 $NAME.tar.gz" | sha256sum -c; then
+  wget $URL --continue -O $NAME.tar.gz
+fi
+rm -rf $NAME fmt
+tar xzf $NAME.tar.gz
+mv $NAME fmt
 
 cmake -Bbuild
 cmake --build build
